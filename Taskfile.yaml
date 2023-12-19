@@ -1,0 +1,75 @@
+version: "3"
+
+vars:
+  # create v2 to change major version 
+  OUT_DIR: .
+  VOLUME: /root/vol
+  BUILD_IMAGE_TAG: anyboards-protoc:latest
+
+tasks:
+
+  gen:
+    cmds:
+      - task: clone
+      - task: protoc
+      - task: tidy
+
+  clone:
+    desc: "Clone https://github.com/anyboards/proto. First step of `gen` task"
+    cmds:
+      - rm -rf proto
+      - git clone -o proto https://github.com/anyboards/proto
+
+  protoc:
+    desc: "Generate Go-code from https://github.com/anyboards/proto"
+
+    vars:
+      PROTO_FILES:
+        # Find all proto files in the current directory and cut extensions
+        sh: find ./proto -maxdepth 1 -type file -name '*.proto' | xargs -I{} basename {} '.proto'
+
+    cmds:
+      # Create image for building Go-code
+      - cmd: docker build -t {{.BUILD_IMAGE_TAG}} .
+
+      # Create directories for each proto file
+      - for: { var: PROTO_FILES }
+        cmd: mkdir -p ./{{.OUT_DIR}}/{{.ITEM}}
+
+      # Generate Go-code within Docker container
+      - for: { var: PROTO_FILES }
+        cmd: >-
+          docker run --rm -v=.:{{.VOLUME}} {{.BUILD_IMAGE_TAG}}
+          protoc --proto_path={{.VOLUME}}/proto {{.ITEM}}.proto
+          --go_out={{.VOLUME}}/{{.OUT_DIR}}/{{.ITEM}} --go_opt=paths=source_relative
+          --go-grpc_out={{.VOLUME}}/{{.OUT_DIR}}/{{.ITEM}} --go-grpc_opt=paths=source_relative
+
+  tidy:
+    dir: "{{.OUT_DIR}}"
+    cmd: go mod tidy
+
+  minor:
+    desc: "Publish generated code incrementing minor version"
+    vars:
+      CURRENT_TAG: $(git describe --tags --abbrev=0)
+      NEW_TAG:
+        sh: go run cmd/inctag/main.go {{.CURRENT_TAG}} minor
+    cmds:
+      - git add .
+      - git commit -m "Publish {{.NEW_TAG}}"
+      - git tag {{.NEW_TAG}}
+      - git push -u origin main
+      - git push -u origin {{.NEW_TAG}}
+
+  patch:
+    desc: "Publish generated code incrementing patch version"
+    vars:
+      CURRENT_TAG: $(git describe --tags --abbrev=0)
+      NEW_TAG:
+        sh: go run cmd/inctag/main.go {{.CURRENT_TAG}} patch
+    cmds:
+      - git add .
+      - git commit -m "Publish {{.NEW_TAG}}"
+      - git tag {{.NEW_TAG}}
+      - git push -u origin main
+      - git push -u origin {{.NEW_TAG}}
