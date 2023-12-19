@@ -48,8 +48,12 @@ tasks:
     dir: "{{.OUT_DIR}}"
     cmd: go mod tidy
 
+  fetchtags:
+    cmd: git fetch --tags
+
   minor:
     desc: "Publish generated code incrementing minor version"
+    deps: [fetchtags]
     vars:
       CURRENT_TAG: $(git describe --tags --abbrev=0)
       NEW_TAG:
@@ -63,6 +67,7 @@ tasks:
 
   patch:
     desc: "Publish generated code incrementing patch version"
+    deps: [fetchtags]
     vars:
       CURRENT_TAG: $(git describe --tags --abbrev=0)
       NEW_TAG:
